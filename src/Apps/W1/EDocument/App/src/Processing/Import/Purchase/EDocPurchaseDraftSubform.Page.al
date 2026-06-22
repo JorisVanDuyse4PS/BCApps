@@ -4,9 +4,13 @@
 // ------------------------------------------------------------------------------------------------
 namespace Microsoft.eServices.EDocument.Processing.Import.Purchase;
 
+using Microsoft.Bank.Reconciliation;
 using Microsoft.eServices.EDocument;
 using Microsoft.eServices.EDocument.Processing.Import;
+using Microsoft.Finance.Deferral;
 using Microsoft.Finance.Dimension;
+using Microsoft.Finance.GeneralLedger.Account;
+using Microsoft.Inventory.Item;
 using Microsoft.Inventory.Item.Catalog;
 using Microsoft.Purchases.Document;
 using Microsoft.Purchases.History;
@@ -314,17 +318,99 @@ page 6183 "E-Doc. Purchase Draft Subform"
                         Caption = 'Item References';
                         ToolTip = 'View item references for the vendor associated with this e-document.';
                         Image = Change;
+                        Scope = Repeater;
 
                         trigger OnAction()
                         var
                             ItemReference: Record "Item Reference";
                             ItemReferencePage: Page "Item Reference Entries";
                         begin
+                            EnsureEDocumentPurchaseHeader();
                             EDocumentPurchaseHeader.TestField("[BC] Vendor No.");
                             ItemReference.SetRange("Reference Type", ItemReference."Reference Type"::Vendor);
                             ItemReference.SetRange("Reference Type No.", EDocumentPurchaseHeader."[BC] Vendor No.");
                             ItemReferencePage.SetTableView(ItemReference);
                             ItemReferencePage.Run();
+                        end;
+                    }
+                    action(OpenTextToAccountMappings)
+                    {
+                        ApplicationArea = All;
+                        Caption = 'Text-to-Account Mappings';
+                        ToolTip = 'Opens the Text-to-Account Mapping filtered for the current vendor.';
+                        Image = MapAccounts;
+                        Scope = Repeater;
+
+                        trigger OnAction()
+                        var
+                            TextToAccountMapping: Record "Text-to-Account Mapping";
+                        begin
+                            EnsureEDocumentPurchaseHeader();
+                            EDocumentPurchaseHeader.TestField("[BC] Vendor No.");
+                            TextToAccountMapping.SetFilter("Vendor No.", '%1|%2', '', EDocumentPurchaseHeader."[BC] Vendor No.");
+                            Page.Run(Page::"Text-to-Account Mapping", TextToAccountMapping);
+                        end;
+                    }
+                    action(OpenHistoricalPurchaseLines)
+                    {
+                        ApplicationArea = All;
+                        Caption = 'Historical Purchase Lines';
+                        ToolTip = 'Opens historical purchase invoice lines to help match this draft line based on past invoices.';
+                        Image = History;
+                        Scope = Repeater;
+
+                        trigger OnAction()
+                        var
+                            TempPurchInvLine: Record "Purch. Inv. Line" temporary;
+                            EDocHistLineDataLoader: Codeunit "E-Doc. Hist. Line Data Loader";
+                            EDocHistoricalLinesList: Page "E-Doc. Historical Lines List";
+                        begin
+                            EnsureEDocumentPurchaseHeader();
+                            EDocHistLineDataLoader.LoadHistoricalLines(TempPurchInvLine, EDocumentPurchaseHeader."[BC] Vendor No.", Rec."Product Code", Rec.Description);
+                            EDocHistoricalLinesList.SetRecords(TempPurchInvLine);
+                            EDocHistoricalLinesList.Run();
+                        end;
+                    }
+                    action(OpenChartOfAccounts)
+                    {
+                        ApplicationArea = All;
+                        Caption = 'Chart of Accounts';
+                        ToolTip = 'Opens the Chart of Accounts to look up G/L accounts for this line.';
+                        Image = ChartOfAccounts;
+                        Scope = Repeater;
+
+                        trigger OnAction()
+                        begin
+                            Page.Run(Page::"Chart of Accounts");
+                        end;
+                    }
+                    action(OpenItems)
+                    {
+                        ApplicationArea = All;
+                        Caption = 'Items';
+                        ToolTip = 'Opens the item list to look up items for this line.';
+                        Image = Item;
+                        Scope = Repeater;
+
+                        trigger OnAction()
+                        var
+                            Item: Record Item;
+                        begin
+                            Item.SetRange(Blocked, false);
+                            Page.Run(Page::"Item List", Item);
+                        end;
+                    }
+                    action(OpenDeferralTemplates)
+                    {
+                        ApplicationArea = All;
+                        Caption = 'Deferral Templates';
+                        ToolTip = 'Opens the list of deferral templates for assigning deferrals to this line.';
+                        Image = CalculateCalendar;
+                        Scope = Repeater;
+
+                        trigger OnAction()
+                        begin
+                            Page.Run(Page::"Deferral Template List");
                         end;
                     }
                 }
@@ -376,6 +462,12 @@ page 6183 "E-Doc. Purchase Draft Subform"
     internal procedure SetEDocumentPurchaseHeader(EDocPurchHeader: Record "E-Document Purchase Header")
     begin
         EDocumentPurchaseHeader := EDocPurchHeader;
+    end;
+
+    local procedure EnsureEDocumentPurchaseHeader()
+    begin
+        if not EDocumentPurchaseHeader.Get(Rec."E-Document Entry No.") then
+            Clear(EDocumentPurchaseHeader);
     end;
 
     local procedure SetDimensionsVisibility()
